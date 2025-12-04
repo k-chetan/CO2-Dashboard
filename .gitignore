@@ -49,3 +49,11 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+
+# Data Persistence Rules
+data/raw/
+data/processed/
+data/*.duckdb
+
+# Mac System Files
+.DS_Store
