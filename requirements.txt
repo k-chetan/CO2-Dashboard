@@ -4,4 +4,4 @@ plotly-express
 pyarrow
 duckdb
 pandera
-
+requests

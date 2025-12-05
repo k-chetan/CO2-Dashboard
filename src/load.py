@@ -4,25 +4,17 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_data_to_duckdb():
-    PARQUET_PATH = Path("data/processed/co2_data.parquet")
-    DB_PATH = Path("data/co2_data.duckdb")
-    TABLE_NAME = "co2_emissions"
-
-    if not PARQUET_PATH.exists():
-        logging.error(f"Input file missing: {PARQUET_PATH}")
-        raise FileNotFoundError("Pipeline sequence error: Transform step must run before Load.")
-
-    logging.info(f"Connecting to persistent database: {DB_PATH}")
-    con = duckdb.connect(database=str(DB_PATH), read_only=False)
+def load_data():
+    input_path = Path("data/processed/co2_data.parquet")
+    db_path = Path("data/co2_data.duckdb")
     
-    query = f"CREATE OR REPLACE TABLE {TABLE_NAME} AS SELECT * FROM read_parquet('{str(PARQUET_PATH)}');"
-    con.execute(query)
-    
-    logging.info(f"Table '{TABLE_NAME}' successfully loaded.")
-    count = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()
-    logging.info(f"Verification: {count} records in table.")
+    if not input_path.exists():
+        raise FileNotFoundError("Processed data not found. Run transform.py first.")
+
+    con = duckdb.connect(str(db_path))
+    con.execute(f"CREATE OR REPLACE TABLE co2_emissions AS SELECT * FROM read_parquet('{input_path}')")
     con.close()
+    logging.info(f"Loaded data into DuckDB at {db_path}")
 
 if __name__ == "__main__":
-    load_data_to_duckdb()
+    load_data()
