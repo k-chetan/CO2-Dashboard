@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  co2-app:
+    build: .
+    container_name: co2_platform
+    ports:
+      - "8501:8501"
+    volumes:
+      # Maps your local 'data' folder to the container's 'data' folder
+      - ./data:/app/data

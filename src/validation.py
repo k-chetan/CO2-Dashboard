@@ -1,10 +1,11 @@
-import pandera as pa
+import pandera.pandas as pa
 from pandera import Column, Check
 
 def get_co2_schema() -> pa.DataFrameSchema:
     schema = pa.DataFrameSchema(
         columns={
             "country": Column(str, nullable=False),
+            # FIXED: Completed the truncated line below
             "year": Column(int, checks=[Check.greater_than_or_equal_to(1750)], nullable=False),
             "iso_code": Column(str, nullable=False),
             "population": Column(float, nullable=True),
@@ -18,6 +19,8 @@ def get_co2_schema() -> pa.DataFrameSchema:
             "gas_co2": Column(float, nullable=True),
             "cement_co2": Column(float, nullable=True),
             "co2_growth_abs": Column(float, nullable=True),
+            "share_global_co2": Column(float, nullable=True),
+            "flaring_co2": Column(float, nullable=True),
             "co2_rolling_7yr": Column(float, nullable=True),
         },
         strict="filter",
