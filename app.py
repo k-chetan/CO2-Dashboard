@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import importlib
+from pathlib import Path
 
 # ==============================================================================
 # 1. CONFIGURATION & STATE
@@ -21,88 +22,113 @@ if 'current_page' not in st.session_state:
 # Global Constants
 REPO_URL = "https://github.com/k-chetan/CO2-Dashboard"
 README_URL = "https://raw.githubusercontent.com/k-chetan/CO2-Dashboard/master/README.md"
-DATA_URL = "https://github.com/owid/co2-data"
-DOCKER_URL = "https://hub.docker.com/"
+DOCKER_URL = "https://hub.docker.com/r/kchetan/co2-dashboard"
+RAW_DATA_URL = "https://github.com/owid/co2-data"
+DATA_PATH = Path("data/processed/co2_data.parquet")
 
 # ==============================================================================
-# 2. PROFESSIONAL STYLING (CSS - DARK/LIGHT MODE COMPATIBLE)
+# 2. PROFESSIONAL STYLING (CSS)
 # ==============================================================================
-st.markdown("""
+st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
     
-    /* Remove Streamlit Default Decoration */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden;} 
-    [data-testid="stDecoration"] {display: none;}
+    /* Remove Decorations */
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{visibility: hidden;}}
+    [data-testid="stToolbar"] {{visibility: hidden;}} 
+    [data-testid="stDecoration"] {{display: none;}}
     
-    /* Layout Adjustments */
-    .block-container {
+    /* Layout */
+    .block-container {{
         padding-top: 2rem;
         padding-bottom: 5rem;
         max-width: 1200px;
-    }
+    }}
 
-    /* Navigation Buttons */
-    div.stButton > button {
+    /* --- NAVIGATION BUTTONS (Top) --- */
+    div.stButton > button {{
         width: 100%;
         border-radius: 8px;
         font-weight: 600;
         height: 3rem;
         border: 1px solid rgba(128, 128, 128, 0.2);
         transition: all 0.2s ease;
-    }
-    
-    div.stButton > button:hover {
+    }}
+    div.stButton > button:hover {{
         border-color: #3b82f6;
         color: #3b82f6;
         background-color: rgba(59, 130, 246, 0.1);
-    }
+    }}
 
-    /* Metric Cards Styling - Glassmorphism for Dark/Light Mode compatibility */
-    [data-testid="stMetric"] {
-        background-color: rgba(128, 128, 128, 0.05); /* Transparent Grey */
+    /* --- FOOTER BUTTONS (Attention Seeking) --- */
+    /* Target specific links by their HREF attribute to style only the footer buttons */
+    
+    a[href="{REPO_URL}"], 
+    a[href="{REPO_URL}/commits/master"], 
+    a[href="{DOCKER_URL}"], 
+    a[href="{RAW_DATA_URL}"] {{
+        background-color: #ef4444 !important; /* Red */
+        color: white !important;
+        border: none !important;
+        font-weight: 700 !important;
+        text-align: center !important;
+        text-decoration: none !important;
+        border-radius: 8px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        height: 3rem !important;
+        transition: background-color 0.3s ease, transform 0.2s ease !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }}
+
+    /* Hover State: Turn Green */
+    a[href="{REPO_URL}"]:hover, 
+    a[href="{REPO_URL}/commits/master"]:hover, 
+    a[href="{DOCKER_URL}"]:hover, 
+    a[href="{RAW_DATA_URL}"]:hover {{
+        background-color: #22c55e !important; /* Green */
+        color: white !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 8px rgba(0,0,0,0.15);
+    }}
+
+    /* Metric Cards */
+    [data-testid="stMetric"] {{
+        background-color: rgba(128, 128, 128, 0.05);
         border: 1px solid rgba(128, 128, 128, 0.1);
         padding: 15px;
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
+    }}
     
-    /* Headings */
-    h1, h2, h3 { letter-spacing: -0.02em; }
-    
+    h1, h2, h3 {{ letter-spacing: -0.02em; }}
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. DATA ENGINE (FIXED: Added missing columns for stories)
+# 3. DATA ENGINE
 # ==============================================================================
 
 @st.cache_data(ttl=3600)
-def load_real_data():
-    url = "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv"
+def load_data():
     try:
-        # FIXED: Included all columns required by the 10 data stories
-        cols = [
-            'country', 'year', 'iso_code', 'population', 'gdp', 
-            'co2', 'co2_per_capita', 'cumulative_co2', 
-            'coal_co2', 'oil_co2', 'gas_co2', 'cement_co2', 'flaring_co2',
-            'share_global_co2', 'consumption_co2'
-        ]
-        df = pd.read_csv(url, usecols=cols)
-        df = df[df['year'] >= 1950].fillna(0)
+        if not DATA_PATH.exists():
+            st.error("⚠️ Data not found. Run 'make run-pipeline' or 'make docker-pipeline' first.")
+            return pd.DataFrame()
+        
+        df = pd.read_parquet(DATA_PATH)
         return df
     except Exception as e:
         st.error(f"Critical Data Failure: {e}")
         return pd.DataFrame()
 
-# Load data with a spinner for UX
 with st.spinner("Initializing Data Engine..."):
-    df = load_real_data()
+    df = load_data()
 
 # ==============================================================================
 # 4. STORY REGISTRY
@@ -125,13 +151,11 @@ STORY_MAP = {
 # 5. HEADER & NAVIGATION
 # ==============================================================================
 
-# Professional Title Area
 c_title, c_logo = st.columns([4, 1])
 with c_title:
     st.title("Global CO₂ Intelligence Platform")
-    st.markdown("**Interactive Analysis of Emissions Data (1950 - Present)**")
+    st.markdown("**Interactive Analysis of Emissions Data (1750 - Present)**")
 
-# Navigation System
 st.markdown("<br>", unsafe_allow_html=True)
 nav_1, nav_2, nav_3, nav_4 = st.columns(4)
 
@@ -150,42 +174,38 @@ nav_button("Data Stories", nav_4)
 st.markdown("---")
 
 # ==============================================================================
-# 6. HELPER: FOOTER
+# 6. HELPER: FOOTER (LINKS MUST MATCH CSS EXACTLY)
 # ==============================================================================
 def render_footer():
     st.markdown("---")
     st.caption("© 2024 Data Intelligence Unit. Open Source MIT License.")
     r1, r2, r3, r4 = st.columns(4)
+    
+    # These URLs are targeted by the CSS above to turn Red -> Green
     r1.link_button("GitHub Repo", REPO_URL, icon="💻", use_container_width=True)
     r2.link_button("Commit History", f"{REPO_URL}/commits/master", icon="🕒", use_container_width=True)
     r3.link_button("Docker Hub", DOCKER_URL, icon="🐳", use_container_width=True)
-    r4.link_button("Raw Data", DATA_URL, icon="📊", use_container_width=True)
+    r4.link_button("Raw Data", RAW_DATA_URL, icon="📊", use_container_width=True)
 
 # ==============================================================================
 # 7. VIEW CONTROLLER
 # ==============================================================================
 
-# --- PAGE 1: HOME (DASHBOARD) ---
 if st.session_state.current_page == "Home":
-    
-    # 1. High-Level Metrics (KPIs)
     if not df.empty:
         st.markdown("### ⚡ System Status & Key Metrics")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
         max_year = int(df['year'].max())
         total_countries = df['country'].nunique()
-        latest_global_co2 = df[df['year'] == max_year]['co2'].sum() / 1000 # Billions
+        latest_global_co2 = df[(df['year'] == max_year) & (df['country'] == 'World')]['co2'].sum() / 1000
         
-        # Using standard metric
-        kpi1.metric("Data Up To", f"{max_year}", delta="Live from OWID")
+        kpi1.metric("Data Up To", f"{max_year}", delta="Live from Pipeline")
         kpi2.metric("Entities Tracked", f"{total_countries}", delta="Global Coverage")
         kpi3.metric(f"Global CO₂ ({max_year})", f"{latest_global_co2:.1f} Bt", delta="Billion Tonnes")
-        kpi4.metric("Pipeline Latency", "34ms", delta="-12% vs avg")
+        kpi4.metric("Pipeline Status", "Ready", delta="Parquet Optimized")
     
     st.markdown("---")
-    
-    # 2. Executive Summary
     st.markdown("### 📋 Executive Summary")
     c1, c2 = st.columns([2, 1])
     
@@ -205,7 +225,6 @@ if st.session_state.current_page == "Home":
     st.markdown("<br>", unsafe_allow_html=True)
     render_footer()
 
-# --- PAGE 2: README ---
 elif st.session_state.current_page == "Project README":
     st.markdown("### 📑 Project Documentation")
     st.caption(f"Fetched dynamically from: {REPO_URL}")
@@ -217,16 +236,14 @@ elif st.session_state.current_page == "Project README":
             if response.status_code == 200:
                 st.markdown(response.text)
             else:
-                st.warning("README not found in the master branch.")
+                st.warning(f"README not found at {README_URL}")
     except Exception as e:
         st.error(f"Connection Error: {e}")
 
-    # Roadmap moved here
     st.divider()
     with st.expander("🔮 View Roadmap: Predictive Analytics (Q4 2025)", expanded=False):
         st.markdown("""
         The following features are currently in the development pipeline for Version 2.0:
-        
         * **Predictive Inference Engine:** Integration of Prophet/ARIMA for 2050 targets.
         * **AI Architect Agent:** A RAG-based LLM chatbot to query the underlying SQL logic.
         * **CI/CD Pipelines:** Automated data refreshing via GitHub Actions.
@@ -234,108 +251,103 @@ elif st.session_state.current_page == "Project README":
     
     render_footer()
 
-# --- PAGE 3: ARCHITECTURE (ENHANCED) ---
 elif st.session_state.current_page == "Architecture":
     st.markdown("### 🏗️ Engineering Architecture")
     st.markdown("""
     This application implements a **"Lakehouse-Lite"** topology. It is designed to demonstrate how heavy-duty data engineering principles 
     can be applied to lightweight, stateless applications.
     """)
-    
     st.divider()
 
-    # 1. The Diagram
     st.subheader("1. The Data Pipeline")
     st.graphviz_chart("""
         digraph G {
             rankdir=LR; 
             bgcolor="transparent";
-            fontname="Inter";
-            node [shape=box, style="filled,rounded", fontname="Inter", fontsize=11, penwidth=1.5];
-            edge [fontname="Inter", fontsize=10, color="#64748b", penwidth=1.5];
+            node [shape=box, style="filled,rounded", fontname="Sans", fontsize=10];
+            edge [fontname="Sans", fontsize=9, color="#64748b"];
 
-            subgraph cluster_ingest {
-                label = "LAYER 1: INGEST";
-                style=dashed; color="#94a3b8"; fontcolor="#64748b";
-                Source [label="OWID Cloud\n(CSV)", fillcolor="#f1f5f9", color="#cbd5e1"];
-                PyRequest [label="Python\nRequests", fillcolor="#fff1f2", color="#fda4af"];
-            }
-
-            subgraph cluster_process {
-                label = "LAYER 2: PROCESSING";
-                style=solid; color="#3b82f6"; fontcolor="#2563eb"; bgcolor="#eff6ff";
-                DuckDB [label="DuckDB\n(In-Process OLAP)", fillcolor="#3b82f6", fontcolor="white"];
-                SQL [label="SQL Scripts\n(Declarative Logic)", fillcolor="#dbeafe", style="dashed,filled"];
-            }
-
-            subgraph cluster_gate {
-                label = "LAYER 3: QUALITY";
-                style=solid; color="#f59e0b"; fontcolor="#d97706"; bgcolor="#fffbeb";
-                Pandera [label="Pandera\n(Schema Check)", fillcolor="#f59e0b", fontcolor="white"];
+            subgraph cluster_etl {
+                label = "ETL Pipeline (Makefile)";
+                style=dashed; color="#94a3b8";
+                Ingest [label="Ingest (Python)", fillcolor="#f1f5f9"];
+                DuckDB [label="DuckDB (SQL)", fillcolor="#3b82f6", fontcolor="white"];
+                Validation [label="Pandera (Check)", fillcolor="#f59e0b", fontcolor="white"];
             }
 
             subgraph cluster_app {
-                label = "LAYER 4: SERVE";
-                style=solid; color="#10b981"; fontcolor="#059669"; bgcolor="#ecfdf5";
-                UI [label="Streamlit\n(Frontend)", fillcolor="#10b981", fontcolor="white"];
+                label = "Frontend";
+                style=solid; color="#10b981";
+                Streamlit [label="Streamlit App", fillcolor="#10b981", fontcolor="white"];
             }
 
-            Source -> PyRequest;
-            PyRequest -> DuckDB [label=" Load"];
-            DuckDB -> SQL [dir=both, style=dotted];
-            DuckDB -> Pandera [label=" Arrow Table"];
-            Pandera -> UI [label=" Validated DF"];
+            Ingest -> DuckDB [label=" Raw CSV"];
+            DuckDB -> Validation [label=" Transform"];
+            Validation -> Streamlit [label=" Parquet"];
         }
     """, use_container_width=True)
 
-    # 2. Detailed Tech Stack
-    st.subheader("2. Core Technical Components")
-    st.markdown("This architecture was chosen to ensure the project is **reproducible, strict, and performant**.")
-
-    c1, c2, c3 = st.columns(3)
+    st.subheader("2. Project Directory Structure")
+    st.markdown("The codebase follows a strict separation of concerns, isolating logic (`src`), data (`data`), and presentation (`stories`).")
     
+    st.code("""
+.
+├── .dockerignore              # [Infra] Excludes data/venv from build
+├── .gitignore                 # [Infra] Excludes data/venv from git
+├── docker-compose.yml         # [Infra] Volume mapping & service
+├── Dockerfile                 # [Infra] Container blueprint
+├── Makefile                   # [Auto]  Command shortcuts
+├── README.md                  # [Docs]  Project documentation
+├── requirements.txt           # [Deps]  Python dependencies
+├── app.py                     # [Core]  Streamlit Frontend
+│
+├── data/                      # [Data]  (Local only, ignored by Git)
+│   ├── raw/                   #         -> .gitkeep
+│   └── processed/             #         -> .gitkeep
+│
+├── src/                       # [Logic]
+│   ├── __init__.py
+│   ├── ingest.py              #         -> Requests
+│   ├── transform.py           #         -> DuckDB
+│   ├── validation.py          #         -> Pandera Schema
+│   │
+│   ├── sql/                   # [SQL]
+│   │   ├── 01_clean_and_cast.sql
+│   │   ├── 02_calculate_metrics.sql
+│   │   └── 03_add_rolling_averages.sql
+│   │
+│   └── tests/                 # [QA]
+│       ├── __init__.py
+│       └── test_pipeline.py   #         -> Pytest
+│
+└── stories/                   # [Viz]
+    ├── __init__.py
+    ├── story_01_Historical_Responsibility.py
+    ├── ... (Stories 1-10)
+    └── story_10_The_Analysts_View.py
+    """, language="text")
+
+    st.subheader("3. Core Technical Components")
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("#### 🦆 DuckDB (The Engine)")
         st.caption("In-Process OLAP")
-        st.markdown("""
-        We bypass standard Pandas looping in favor of **DuckDB**. This allows us to write standard SQL for data transformations (`clean_and_cast.sql`, `calculate_metrics.sql`). 
-        
-        *Benefit:* Decouples business logic from application code.
-        """)
-
+        st.markdown("Runs SQL transformations on raw CSVs without loading them entirely into memory.")
     with c2:
         st.markdown("#### 🛡️ Pandera (The Gatekeeper)")
         st.caption("Runtime Validation")
-        st.markdown("""
-        Before any data reaches the visualization layer, it passes through a **Pandera Schema**. This acts as a contract; if the data type of `co2` is not `float` or if `year` < 1750, the pipeline halts.
-        
-        *Benefit:* Prevents silent data corruption errors.
-        """)
-
+        st.markdown("Enforces a strict schema contract. If data violates the contract, the pipeline halts.")
     with c3:
         st.markdown("#### 🐳 Docker (The Environment)")
         st.caption("Stateless Deployment")
-        st.markdown("""
-        The application runs in a containerized environment (Python 3.9-slim). It creates a pristine, ephemeral environment on every deploy.
-        
-        *Benefit:* Eliminates "it works on my machine" issues.
-        """)
+        st.markdown("Ensures the entire environment (OS + Python) is reproducible on any machine.")
 
     render_footer()
 
-# --- PAGE 4: DATA STORIES ---
 elif st.session_state.current_page == "Data Stories":
-    
     st.markdown("### 📈 Analytical Narratives")
-    st.markdown("""
-    The following reports present a sequential analysis of global emissions. 
-    *Scroll down to view the complete narrative arc.*
-    """)
-    
-    # Render Stories
     for story_name, module_path in STORY_MAP.items():
         st.markdown("---")
-        st.subheader(story_name) 
         try:
             story_module = importlib.import_module(module_path)
             story_module.show(df)
@@ -343,7 +355,5 @@ elif st.session_state.current_page == "Data Stories":
              st.warning(f"⚠️ Module `{module_path}` pending deployment.")
         except Exception as e:
             st.error(f"Error rendering {story_name}: {e}")
-       
     st.markdown("---")
-    
     render_footer()
