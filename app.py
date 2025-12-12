@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import duckdb
 import requests
 import importlib
 from pathlib import Path
@@ -19,15 +20,17 @@ st.set_page_config(
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Global Constants
-REPO_URL = "https://github.com/k-chetan/CO2-Dashboard"
+# Constants
+REPO_URL = "https://github.com/k-chetan/CO2-Dashboard" # Replace with your username
 README_URL = "https://raw.githubusercontent.com/k-chetan/CO2-Dashboard/master/README.md"
 DOCKER_URL = "https://hub.docker.com/r/kchetan/co2-dashboard"
-RAW_DATA_URL = "https://github.com/owid/co2-data"
-DATA_PATH = Path("data/processed/co2_data.parquet")
+# Live Stream URL (Raw CSV)
+LIVE_DATA_URL = "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv"
+# Attribution URL (Main Repo with License)
+OWID_REPO_URL = "https://github.com/owid/co2-data"
 
 # ==============================================================================
-# 2. PROFESSIONAL STYLING (CSS)
+# 2. STYLING (CSS)
 # ==============================================================================
 st.markdown(f"""
     <style>
@@ -64,14 +67,12 @@ st.markdown(f"""
         background-color: rgba(59, 130, 246, 0.1);
     }}
 
-    /* --- FOOTER BUTTONS (Attention Seeking) --- */
-    /* Target specific links by their HREF attribute to style only the footer buttons */
-    
+    /* --- FOOTER BUTTONS --- */
     a[href="{REPO_URL}"], 
     a[href="{REPO_URL}/commits/master"], 
     a[href="{DOCKER_URL}"], 
-    a[href="{RAW_DATA_URL}"] {{
-        background-color: #ef4444 !important; /* Red */
+    a[href="{OWID_REPO_URL}"] {{
+        background-color: #ef4444 !important;
         color: white !important;
         border: none !important;
         font-weight: 700 !important;
@@ -87,12 +88,11 @@ st.markdown(f"""
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }}
 
-    /* Hover State: Turn Green */
     a[href="{REPO_URL}"]:hover, 
     a[href="{REPO_URL}/commits/master"]:hover, 
     a[href="{DOCKER_URL}"]:hover, 
-    a[href="{RAW_DATA_URL}"]:hover {{
-        background-color: #22c55e !important; /* Green */
+    a[href="{OWID_REPO_URL}"]:hover {{
+        background-color: #22c55e !important;
         color: white !important;
         transform: translateY(-2px);
         box-shadow: 0 6px 8px rgba(0,0,0,0.15);
@@ -111,24 +111,66 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. DATA ENGINE
+# 3. LIVE DATA ENGINE (DEPENDENCY INJECTION)
 # ==============================================================================
 
-@st.cache_data(ttl=3600)
-def load_data():
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_live_data():
+    """
+    1. Fetches live raw data from GitHub (Extraction).
+    2. Injects it into DuckDB as 'source_data' (Dependency Injection).
+    3. Applies pure SQL logic from src/sql/ (Transformation).
+    """
     try:
-        if not DATA_PATH.exists():
-            st.error("⚠️ Data not found. Run 'make run-pipeline' or 'make docker-pipeline' first.")
-            return pd.DataFrame()
+        # A. EXTRACT (Live Stream)
+        # We read directly from the URL into a Pandas DataFrame (In-Memory)
+        raw_df = pd.read_csv(LIVE_DATA_URL)
         
-        df = pd.read_parquet(DATA_PATH)
-        return df
+        # B. INITIALIZE ENGINE
+        con = duckdb.connect(database=":memory:")
+        
+        # --- DE PRINCIPLE: DEPENDENCY INJECTION ---
+        # We "inject" the live dataframe as the view 'source_data'.
+        # The SQL script sees the exact same table name as it does in local dev.
+        con.register('source_data', raw_df)
+        
+        # C. TRANSFORM (Reuse identical SQL logic)
+        sql_dir = Path("src/sql")
+        
+        # 1. Clean & Cast (Requires 'source_data' view to exist)
+        with open(sql_dir / "01_clean_and_cast.sql", "r") as f:
+            con.execute("CREATE OR REPLACE VIEW cleaned_data AS " + f.read())
+
+        # 2. Calculate Metrics
+        with open(sql_dir / "02_calculate_metrics.sql", "r") as f:
+            con.execute("CREATE OR REPLACE VIEW metrics_data AS " + f.read())
+
+        # 3. Rolling Averages
+        with open(sql_dir / "03_add_rolling_averages.sql", "r") as f:
+            con.execute("CREATE OR REPLACE TABLE final_data AS " + f.read())
+            
+        # D. LOAD
+        df_result = con.execute("SELECT * FROM final_data").fetchdf()
+        con.close()
+        
+        return df_result
+
     except Exception as e:
-        st.error(f"Critical Data Failure: {e}")
+        st.error(f"⚠️ Live Stream Failure: {e}")
         return pd.DataFrame()
 
-with st.spinner("Initializing Data Engine..."):
-    df = load_data()
+# Execution with Feedback
+status_box = st.empty()
+if 'data_loaded' not in st.session_state:
+    with status_box.container():
+        st.info(f"📡 Establishing Uplink to Live Data Stream...")
+        df = load_live_data()
+        if not df.empty:
+            st.success("✅ Live Data Acquired & Processed.")
+            st.session_state.data_loaded = True
+        status_box.empty()
+else:
+    df = load_live_data()
 
 # ==============================================================================
 # 4. STORY REGISTRY
@@ -154,7 +196,7 @@ STORY_MAP = {
 c_title, c_logo = st.columns([4, 1])
 with c_title:
     st.title("Global CO₂ Intelligence Platform")
-    st.markdown("**Interactive Analysis of Emissions Data (1750 - Present)**")
+    st.markdown("**Live Streaming Analysis (Source: OWID GitHub)**")
 
 st.markdown("<br>", unsafe_allow_html=True)
 nav_1, nav_2, nav_3, nav_4 = st.columns(4)
@@ -174,18 +216,18 @@ nav_button("Data Stories", nav_4)
 st.markdown("---")
 
 # ==============================================================================
-# 6. HELPER: FOOTER (LINKS MUST MATCH CSS EXACTLY)
+# 6. HELPER: FOOTER (Minimalist & Compliant)
 # ==============================================================================
 def render_footer():
     st.markdown("---")
-    st.caption("© 2024 Data Intelligence Unit. Open Source MIT License.")
+    
     r1, r2, r3, r4 = st.columns(4)
     
-    # These URLs are targeted by the CSS above to turn Red -> Green
     r1.link_button("GitHub Repo", REPO_URL, icon="💻", use_container_width=True)
     r2.link_button("Commit History", f"{REPO_URL}/commits/master", icon="🕒", use_container_width=True)
     r3.link_button("Docker Hub", DOCKER_URL, icon="🐳", use_container_width=True)
-    r4.link_button("Raw Data", RAW_DATA_URL, icon="📊", use_container_width=True)
+    # Attribution Button: Links to Main Repo (Contains License/Credits)
+    r4.link_button("Data (OWID)", OWID_REPO_URL, icon="📊", use_container_width=True)
 
 # ==============================================================================
 # 7. VIEW CONTROLLER
@@ -193,17 +235,17 @@ def render_footer():
 
 if st.session_state.current_page == "Home":
     if not df.empty:
-        st.markdown("### ⚡ System Status & Key Metrics")
+        st.markdown("### ⚡ Live System Metrics")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
         max_year = int(df['year'].max())
         total_countries = df['country'].nunique()
         latest_global_co2 = df[(df['year'] == max_year) & (df['country'] == 'World')]['co2'].sum() / 1000
         
-        kpi1.metric("Data Up To", f"{max_year}", delta="Live from Pipeline")
+        kpi1.metric("Data Up To", f"{max_year}", delta="Real-time Stream")
         kpi2.metric("Entities Tracked", f"{total_countries}", delta="Global Coverage")
         kpi3.metric(f"Global CO₂ ({max_year})", f"{latest_global_co2:.1f} Bt", delta="Billion Tonnes")
-        kpi4.metric("Pipeline Status", "Ready", delta="Parquet Optimized")
+        kpi4.metric("Architecture", "Serverless", delta="In-Memory OLAP")
     
     st.markdown("---")
     st.markdown("### 📋 Executive Summary")
@@ -211,16 +253,18 @@ if st.session_state.current_page == "Home":
     
     with c1:
         st.markdown("""
-        **Context:** Climate change is the defining data challenge of our time. This application serves as a demonstration of rigorous **Data Engineering** principles applied to environmental science.
+        **Context:** This application operates on a **Live Streaming Architecture**. 
+        Instead of reading static files, it pulls the latest raw dataset directly from the 
+        [OWID GitHub Repository](https://github.com/owid/co2-data) every time the cache expires.
         
         **Engineering Highlights:**
-        * **Declarative Transformations:** Logic resides in SQL/DuckDB, not opaque Python loops.
-        * **Strict Schema Validation:** Incoming data is vetted by Pandera before rendering.
-        * **Containerized Reproducibility:** The environment is strictly defined via Docker.
+        * **Dependency Injection:** The Pipeline is agnostic to the data source (File vs URL).
+        * **Zero-Storage:** No persistence layer required; data lives in RAM.
+        * **Declarative Transforms:** SQL logic is reused 100% from the local environment.
         """)
         
     with c2:
-        st.info("💡 **Tip:** Navigate to the 'Data Stories' tab for deep-dive visualizations on specific emission drivers.")
+        st.info("💡 **Tip:** Navigate to the 'Data Stories' tab for deep-dive visualizations.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     render_footer()
@@ -239,27 +283,16 @@ elif st.session_state.current_page == "Project README":
                 st.warning(f"README not found at {README_URL}")
     except Exception as e:
         st.error(f"Connection Error: {e}")
-
-    st.divider()
-    with st.expander("🔮 View Roadmap: Predictive Analytics (Q4 2025)", expanded=False):
-        st.markdown("""
-        The following features are currently in the development pipeline for Version 2.0:
-        * **Predictive Inference Engine:** Integration of Prophet/ARIMA for 2050 targets.
-        * **AI Architect Agent:** A RAG-based LLM chatbot to query the underlying SQL logic.
-        * **CI/CD Pipelines:** Automated data refreshing via GitHub Actions.
-        """)
     
     render_footer()
 
 elif st.session_state.current_page == "Architecture":
-    st.markdown("### 🏗️ Engineering Architecture")
+    st.markdown("### 🏗️ Live Streaming Architecture")
     st.markdown("""
-    This application implements a **"Lakehouse-Lite"** topology. It is designed to demonstrate how heavy-duty data engineering principles 
-    can be applied to lightweight, stateless applications.
+    This version implements a **Zero-Storage ETL Pattern** suitable for cloud runtimes.
     """)
     st.divider()
 
-    st.subheader("1. The Data Pipeline")
     st.graphviz_chart("""
         digraph G {
             rankdir=LR; 
@@ -267,80 +300,25 @@ elif st.session_state.current_page == "Architecture":
             node [shape=box, style="filled,rounded", fontname="Sans", fontsize=10];
             edge [fontname="Sans", fontsize=9, color="#64748b"];
 
-            subgraph cluster_etl {
-                label = "ETL Pipeline (Makefile)";
+            subgraph cluster_cloud {
+                label = "Cloud Resources";
                 style=dashed; color="#94a3b8";
-                Ingest [label="Ingest (Python)", fillcolor="#f1f5f9"];
-                DuckDB [label="DuckDB (SQL)", fillcolor="#3b82f6", fontcolor="white"];
-                Validation [label="Pandera (Check)", fillcolor="#f59e0b", fontcolor="white"];
+                GitHub [label="GitHub Raw CSV", fillcolor="#24292e", fontcolor="white"];
             }
 
             subgraph cluster_app {
-                label = "Frontend";
+                label = "Streamlit Container (RAM)";
                 style=solid; color="#10b981";
-                Streamlit [label="Streamlit App", fillcolor="#10b981", fontcolor="white"];
+                Pandas [label="Pandas (Fetch)", fillcolor="#f1f5f9"];
+                DuckDB [label="DuckDB (Transform)", fillcolor="#3b82f6", fontcolor="white"];
+                Streamlit [label="Frontend", fillcolor="#10b981", fontcolor="white"];
             }
 
-            Ingest -> DuckDB [label=" Raw CSV"];
-            DuckDB -> Validation [label=" Transform"];
-            Validation -> Streamlit [label=" Parquet"];
+            GitHub -> Pandas [label=" HTTPS Stream"];
+            Pandas -> DuckDB [label=" In-Memory Transfer"];
+            DuckDB -> Streamlit [label=" Cleaned Dataframe"];
         }
     """, use_container_width=True)
-
-    st.subheader("2. Project Directory Structure")
-    st.markdown("The codebase follows a strict separation of concerns, isolating logic (`src`), data (`data`), and presentation (`stories`).")
-    
-    st.code("""
-.
-├── .dockerignore              # [Infra] Excludes data/venv from build
-├── .gitignore                 # [Infra] Excludes data/venv from git
-├── docker-compose.yml         # [Infra] Volume mapping & service
-├── Dockerfile                 # [Infra] Container blueprint
-├── Makefile                   # [Auto]  Command shortcuts
-├── README.md                  # [Docs]  Project documentation
-├── requirements.txt           # [Deps]  Python dependencies
-├── app.py                     # [Core]  Streamlit Frontend
-│
-├── data/                      # [Data]  (Local only, ignored by Git)
-│   ├── raw/                   #         -> .gitkeep
-│   └── processed/             #         -> .gitkeep
-│
-├── src/                       # [Logic]
-│   ├── __init__.py
-│   ├── ingest.py              #         -> Requests
-│   ├── transform.py           #         -> DuckDB
-│   ├── validation.py          #         -> Pandera Schema
-│   │
-│   ├── sql/                   # [SQL]
-│   │   ├── 01_clean_and_cast.sql
-│   │   ├── 02_calculate_metrics.sql
-│   │   └── 03_add_rolling_averages.sql
-│   │
-│   └── tests/                 # [QA]
-│       ├── __init__.py
-│       └── test_pipeline.py   #         -> Pytest
-│
-└── stories/                   # [Viz]
-    ├── __init__.py
-    ├── story_01_Historical_Responsibility.py
-    ├── ... (Stories 1-10)
-    └── story_10_The_Analysts_View.py
-    """, language="text")
-
-    st.subheader("3. Core Technical Components")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### 🦆 DuckDB (The Engine)")
-        st.caption("In-Process OLAP")
-        st.markdown("Runs SQL transformations on raw CSVs without loading them entirely into memory.")
-    with c2:
-        st.markdown("#### 🛡️ Pandera (The Gatekeeper)")
-        st.caption("Runtime Validation")
-        st.markdown("Enforces a strict schema contract. If data violates the contract, the pipeline halts.")
-    with c3:
-        st.markdown("#### 🐳 Docker (The Environment)")
-        st.caption("Stateless Deployment")
-        st.markdown("Ensures the entire environment (OS + Python) is reproducible on any machine.")
 
     render_footer()
 
