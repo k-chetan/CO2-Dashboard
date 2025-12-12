@@ -199,7 +199,9 @@ with c_title:
     st.markdown("**Live Streaming Analysis (Source: OWID GitHub)**")
 
 st.markdown("<br>", unsafe_allow_html=True)
-nav_1, nav_2, nav_3, nav_4 = st.columns(4)
+
+# UPDATED: 3 Columns instead of 4 (Removed Architecture)
+nav_1, nav_2, nav_3 = st.columns(3)
 
 def nav_button(label, col):
     is_active = st.session_state.current_page == label
@@ -210,8 +212,7 @@ def nav_button(label, col):
 
 nav_button("Home", nav_1)
 nav_button("Project README", nav_2)
-nav_button("Architecture", nav_3)
-nav_button("Data Stories", nav_4)
+nav_button("Data Stories", nav_3)
 
 st.markdown("---")
 
@@ -220,6 +221,7 @@ st.markdown("---")
 # ==============================================================================
 def render_footer():
     st.markdown("---")
+    # No text caption here. Just functional buttons.
     
     r1, r2, r3, r4 = st.columns(4)
     
@@ -284,42 +286,6 @@ elif st.session_state.current_page == "Project README":
     except Exception as e:
         st.error(f"Connection Error: {e}")
     
-    render_footer()
-
-elif st.session_state.current_page == "Architecture":
-    st.markdown("### 🏗️ Live Streaming Architecture")
-    st.markdown("""
-    This version implements a **Zero-Storage ETL Pattern** suitable for cloud runtimes.
-    """)
-    st.divider()
-
-    st.graphviz_chart("""
-        digraph G {
-            rankdir=LR; 
-            bgcolor="transparent";
-            node [shape=box, style="filled,rounded", fontname="Sans", fontsize=10];
-            edge [fontname="Sans", fontsize=9, color="#64748b"];
-
-            subgraph cluster_cloud {
-                label = "Cloud Resources";
-                style=dashed; color="#94a3b8";
-                GitHub [label="GitHub Raw CSV", fillcolor="#24292e", fontcolor="white"];
-            }
-
-            subgraph cluster_app {
-                label = "Streamlit Container (RAM)";
-                style=solid; color="#10b981";
-                Pandas [label="Pandas (Fetch)", fillcolor="#f1f5f9"];
-                DuckDB [label="DuckDB (Transform)", fillcolor="#3b82f6", fontcolor="white"];
-                Streamlit [label="Frontend", fillcolor="#10b981", fontcolor="white"];
-            }
-
-            GitHub -> Pandas [label=" HTTPS Stream"];
-            Pandas -> DuckDB [label=" In-Memory Transfer"];
-            DuckDB -> Streamlit [label=" Cleaned Dataframe"];
-        }
-    """, use_container_width=True)
-
     render_footer()
 
 elif st.session_state.current_page == "Data Stories":
