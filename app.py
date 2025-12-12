@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import duckdb
-import requests
 import importlib
 from pathlib import Path
 
@@ -10,7 +9,7 @@ from pathlib import Path
 # ==============================================================================
 
 st.set_page_config(
-    page_title="Global CO₂ Intelligence",
+    page_title="Global CO₂ Analysis",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -21,12 +20,10 @@ if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
 # Constants
-REPO_URL = "https://github.com/k-chetan/CO2-Dashboard" # Replace with your username
-README_URL = "https://raw.githubusercontent.com/k-chetan/CO2-Dashboard/master/README.md"
+REPO_URL = "https://github.com/k-chetan/CO2-Dashboard" 
+README_URL = "https://github.com/k-chetan/CO2-Dashboard/blob/master/README.md"
 DOCKER_URL = "https://hub.docker.com/r/kchetan/co2-dashboard"
-# Live Stream URL (Raw CSV)
 LIVE_DATA_URL = "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv"
-# Attribution URL (Main Repo with License)
 OWID_REPO_URL = "https://github.com/owid/co2-data"
 
 # ==============================================================================
@@ -53,21 +50,30 @@ st.markdown(f"""
     }}
 
     /* --- NAVIGATION BUTTONS (Top) --- */
-    div.stButton > button {{
+    div.stButton > button, 
+    a[href="{README_URL}"] {{
         width: 100%;
         border-radius: 8px;
         font-weight: 600;
         height: 3rem;
         border: 1px solid rgba(128, 128, 128, 0.2);
         transition: all 0.2s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: inherit;
     }}
-    div.stButton > button:hover {{
+    
+    div.stButton > button:hover, 
+    a[href="{README_URL}"]:hover {{
         border-color: #3b82f6;
         color: #3b82f6;
         background-color: rgba(59, 130, 246, 0.1);
     }}
 
     /* --- FOOTER BUTTONS --- */
+    /* Target specific links by HREF to apply button styling */
     a[href="{REPO_URL}"], 
     a[href="{REPO_URL}/commits/master"], 
     a[href="{DOCKER_URL}"], 
@@ -117,27 +123,23 @@ st.markdown(f"""
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_live_data():
     """
-    1. Fetches live raw data from GitHub (Extraction).
-    2. Injects it into DuckDB as 'source_data' (Dependency Injection).
-    3. Applies pure SQL logic from src/sql/ (Transformation).
+    Fetches live raw data from the repository, injects it into DuckDB, 
+    and applies SQL transformations in-memory.
     """
     try:
         # A. EXTRACT (Live Stream)
-        # We read directly from the URL into a Pandas DataFrame (In-Memory)
         raw_df = pd.read_csv(LIVE_DATA_URL)
         
         # B. INITIALIZE ENGINE
         con = duckdb.connect(database=":memory:")
         
-        # --- DE PRINCIPLE: DEPENDENCY INJECTION ---
-        # We "inject" the live dataframe as the view 'source_data'.
-        # The SQL script sees the exact same table name as it does in local dev.
+        # Dependency Injection: Register the live dataframe as 'source_data'
         con.register('source_data', raw_df)
         
-        # C. TRANSFORM (Reuse identical SQL logic)
+        # C. TRANSFORM
         sql_dir = Path("src/sql")
         
-        # 1. Clean & Cast (Requires 'source_data' view to exist)
+        # 1. Clean & Cast
         with open(sql_dir / "01_clean_and_cast.sql", "r") as f:
             con.execute("CREATE OR REPLACE VIEW cleaned_data AS " + f.read())
 
@@ -156,17 +158,16 @@ def load_live_data():
         return df_result
 
     except Exception as e:
-        st.error(f"⚠️ Live Stream Failure: {e}")
+        st.error(f"System Error (Data Pipeline): {e}")
         return pd.DataFrame()
 
-# Execution with Feedback
+# Execution
 status_box = st.empty()
 if 'data_loaded' not in st.session_state:
     with status_box.container():
-        st.info(f"📡 Establishing Uplink to Live Data Stream...")
+        st.info("Initializing connection to live data stream...")
         df = load_live_data()
         if not df.empty:
-            st.success("✅ Live Data Acquired & Processed.")
             st.session_state.data_loaded = True
         status_box.empty()
 else:
@@ -195,12 +196,12 @@ STORY_MAP = {
 
 c_title, c_logo = st.columns([4, 1])
 with c_title:
-    st.title("Global CO₂ Intelligence Platform")
-    st.markdown("**Live Streaming Analysis (Source: OWID GitHub)**")
+    st.title("Global CO₂ Analysis Platform")
+    st.markdown("**Live Data Stream (Source: OWID/Global Carbon Project)**")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# UPDATED: 3 Columns instead of 4 (Removed Architecture)
+# Navigation: 3 Columns
 nav_1, nav_2, nav_3 = st.columns(3)
 
 def nav_button(label, col):
@@ -210,26 +211,29 @@ def nav_button(label, col):
             st.session_state.current_page = label
             st.rerun()
 
+# Tab 1: Home
 nav_button("Home", nav_1)
-nav_button("Project README", nav_2)
-nav_button("Data Stories", nav_3)
+
+# Tab 2: Data Stories
+nav_button("Data Stories", nav_2)
+
+# Tab 3: Project Documentation (External Link)
+with nav_3:
+    st.link_button("Project Documentation ↗", README_URL, use_container_width=True)
 
 st.markdown("---")
 
 # ==============================================================================
-# 6. HELPER: FOOTER (Minimalist & Compliant)
+# 6. FOOTER
 # ==============================================================================
 def render_footer():
     st.markdown("---")
-    # No text caption here. Just functional buttons.
-    
     r1, r2, r3, r4 = st.columns(4)
     
     r1.link_button("GitHub Repo", REPO_URL, icon="💻", use_container_width=True)
     r2.link_button("Commit History", f"{REPO_URL}/commits/master", icon="🕒", use_container_width=True)
     r3.link_button("Docker Hub", DOCKER_URL, icon="🐳", use_container_width=True)
-    # Attribution Button: Links to Main Repo (Contains License/Credits)
-    r4.link_button("Data (OWID)", OWID_REPO_URL, icon="📊", use_container_width=True)
+    r4.link_button("Data Source (OWID)", OWID_REPO_URL, icon="📊", use_container_width=True)
 
 # ==============================================================================
 # 7. VIEW CONTROLLER
@@ -237,66 +241,47 @@ def render_footer():
 
 if st.session_state.current_page == "Home":
     if not df.empty:
-        st.markdown("### ⚡ Live System Metrics")
+        st.markdown("### System Status")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
         max_year = int(df['year'].max())
         total_countries = df['country'].nunique()
         latest_global_co2 = df[(df['year'] == max_year) & (df['country'] == 'World')]['co2'].sum() / 1000
         
-        kpi1.metric("Data Up To", f"{max_year}", delta="Real-time Stream")
-        kpi2.metric("Entities Tracked", f"{total_countries}", delta="Global Coverage")
-        kpi3.metric(f"Global CO₂ ({max_year})", f"{latest_global_co2:.1f} Bt", delta="Billion Tonnes")
-        kpi4.metric("Architecture", "Serverless", delta="In-Memory OLAP")
+        kpi1.metric("Data Year", f"{max_year}")
+        kpi2.metric("Entities Tracked", f"{total_countries}")
+        kpi3.metric(f"Global CO₂ ({max_year})", f"{latest_global_co2:.1f} Bt")
+        kpi4.metric("Architecture", "In-Memory OLAP")
     
     st.markdown("---")
-    st.markdown("### 📋 Executive Summary")
+    st.markdown("### Project Overview")
     c1, c2 = st.columns([2, 1])
     
     with c1:
         st.markdown("""
-        **Context:** This application operates on a **Live Streaming Architecture**. 
-        Instead of reading static files, it pulls the latest raw dataset directly from the 
-        [OWID GitHub Repository](https://github.com/owid/co2-data) every time the cache expires.
+        **Objective:** This application provides an interactive analysis of global CO₂ emissions data from 1750 to the present.
         
-        **Engineering Highlights:**
-        * **Dependency Injection:** The Pipeline is agnostic to the data source (File vs URL).
-        * **Zero-Storage:** No persistence layer required; data lives in RAM.
-        * **Declarative Transforms:** SQL logic is reused 100% from the local environment.
+        **Technical Architecture:**
+        * **Live Streaming:** The application fetches the raw dataset directly from the source repository upon initialization.
+        * **Source-Agnostic Pipeline:** Data transformation logic is decoupled from data extraction, enabling identical execution in local and cloud environments.
+        * **Zero-Storage:** No persistent storage layer is used. All processing (Ingestion, Transformation, Validation) occurs in volatile memory using DuckDB.
         """)
         
     with c2:
-        st.info("💡 **Tip:** Navigate to the 'Data Stories' tab for deep-dive visualizations.")
+        st.info("ℹ️ **Navigation:** Select 'Data Stories' to view specific analytical narratives.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     render_footer()
 
-elif st.session_state.current_page == "Project README":
-    st.markdown("### 📑 Project Documentation")
-    st.caption(f"Fetched dynamically from: {REPO_URL}")
-    st.divider()
-    
-    try:
-        with st.spinner("Fetching documentation..."):
-            response = requests.get(README_URL)
-            if response.status_code == 200:
-                st.markdown(response.text)
-            else:
-                st.warning(f"README not found at {README_URL}")
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
-    
-    render_footer()
-
 elif st.session_state.current_page == "Data Stories":
-    st.markdown("### 📈 Analytical Narratives")
+    st.markdown("### Analytical Narratives")
     for story_name, module_path in STORY_MAP.items():
         st.markdown("---")
         try:
             story_module = importlib.import_module(module_path)
             story_module.show(df)
         except ModuleNotFoundError:
-             st.warning(f"⚠️ Module `{module_path}` pending deployment.")
+             st.warning(f"Module `{module_path}` not found.")
         except Exception as e:
             st.error(f"Error rendering {story_name}: {e}")
     st.markdown("---")
