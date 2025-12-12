@@ -1,12 +1,3 @@
-Here is the rewritten `README.md`.
-
-I have stripped away the marketing language and focused strictly on the architectural patterns, technical decisions, and data methodology. It uses standard industry terminology (e.g., "In-Memory ETL," "Dependency Injection") rather than buzzwords.
-
------
-
-**File:** `README.md`
-
-````markdown
 # Global CO₂ Analysis Platform
 
 > **A stateless data visualization application implementing in-memory ETL and source-agnostic SQL transformations.**
