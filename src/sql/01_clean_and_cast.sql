@@ -1,10 +1,6 @@
-WITH source_data AS (
-    SELECT * FROM read_csv_auto('data/raw/owid-co2-data.csv')
-)
 SELECT
     CAST(country AS VARCHAR) AS country,
     CAST(year AS INTEGER) AS year,
-    -- FIX 1: If ISO_CODE is null (for World), force it to 'OWID_WRL' to satisfy the non-null schema
     COALESCE(CAST(iso_code AS VARCHAR), 'OWID_WRL') AS iso_code,
     CAST(population AS DOUBLE) AS population,
     CAST(gdp AS DOUBLE) AS gdp,
@@ -17,7 +13,6 @@ SELECT
     CAST(gas_co2 AS DOUBLE) AS gas_co2,
     CAST(cement_co2 AS DOUBLE) AS cement_co2,
     CAST(co2_growth_abs AS DOUBLE) AS co2_growth_abs,
-    -- FIX 2: Added missing columns required by Schema
     CAST(share_global_co2 AS DOUBLE) AS share_global_co2,
     CAST(flaring_co2 AS DOUBLE) AS flaring_co2
 FROM source_data
