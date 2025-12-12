@@ -248,10 +248,11 @@ if st.session_state.current_page == "Home":
         total_countries = df['country'].nunique()
         latest_global_co2 = df[(df['year'] == max_year) & (df['country'] == 'World')]['co2'].sum() / 1000
         
+        # FIX: Replaced static "Architecture" text with dynamic "Total Records" count
         kpi1.metric("Data Year", f"{max_year}")
         kpi2.metric("Entities Tracked", f"{total_countries}")
         kpi3.metric(f"Global CO₂ ({max_year})", f"{latest_global_co2:.1f} Bt")
-        kpi4.metric("Architecture", "In-Memory OLAP")
+        kpi4.metric("Dataset Volume", f"{len(df):,}", delta="Rows Processed")
     
     st.markdown("---")
     st.markdown("### Project Overview")
