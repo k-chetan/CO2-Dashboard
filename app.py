@@ -15,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Initialize Session State
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
@@ -35,21 +34,18 @@ st.markdown(f"""
     
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
     
-    /* Remove Decorations */
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
     header {{visibility: hidden;}}
     [data-testid="stToolbar"] {{visibility: hidden;}} 
     [data-testid="stDecoration"] {{display: none;}}
     
-    /* Layout */
     .block-container {{
         padding-top: 2rem;
         padding-bottom: 5rem;
         max-width: 1200px;
     }}
 
-    /* --- NAVIGATION BUTTONS (Top) --- */
     div.stButton > button, 
     a[href="{README_URL}"] {{
         width: 100%;
@@ -72,8 +68,6 @@ st.markdown(f"""
         background-color: rgba(59, 130, 246, 0.1);
     }}
 
-    /* --- FOOTER BUTTONS --- */
-    /* Target specific links by HREF to apply button styling */
     a[href="{REPO_URL}"], 
     a[href="{REPO_URL}/commits/master"], 
     a[href="{DOCKER_URL}"], 
@@ -104,7 +98,6 @@ st.markdown(f"""
         box-shadow: 0 6px 8px rgba(0,0,0,0.15);
     }}
 
-    /* Metric Cards */
     [data-testid="stMetric"] {{
         background-color: rgba(128, 128, 128, 0.05);
         border: 1px solid rgba(128, 128, 128, 0.1);
@@ -122,46 +115,26 @@ st.markdown(f"""
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_live_data():
-    """
-    Fetches live raw data from the repository, injects it into DuckDB, 
-    and applies SQL transformations in-memory.
-    """
     try:
-        # A. EXTRACT (Live Stream)
         raw_df = pd.read_csv(LIVE_DATA_URL)
-        
-        # B. INITIALIZE ENGINE
         con = duckdb.connect(database=":memory:")
-        
-        # Dependency Injection: Register the live dataframe as 'source_data'
         con.register('source_data', raw_df)
         
-        # C. TRANSFORM
         sql_dir = Path("src/sql")
-        
-        # 1. Clean & Cast
         with open(sql_dir / "01_clean_and_cast.sql", "r") as f:
             con.execute("CREATE OR REPLACE VIEW cleaned_data AS " + f.read())
-
-        # 2. Calculate Metrics
         with open(sql_dir / "02_calculate_metrics.sql", "r") as f:
             con.execute("CREATE OR REPLACE VIEW metrics_data AS " + f.read())
-
-        # 3. Rolling Averages
         with open(sql_dir / "03_add_rolling_averages.sql", "r") as f:
             con.execute("CREATE OR REPLACE TABLE final_data AS " + f.read())
             
-        # D. LOAD
         df_result = con.execute("SELECT * FROM final_data").fetchdf()
         con.close()
-        
         return df_result
-
     except Exception as e:
         st.error(f"System Error (Data Pipeline): {e}")
         return pd.DataFrame()
 
-# Execution
 status_box = st.empty()
 if 'data_loaded' not in st.session_state:
     with status_box.container():
@@ -200,8 +173,6 @@ with c_title:
     st.markdown("**Live Data Stream (Source: OWID/Global Carbon Project)**")
 
 st.markdown("<br>", unsafe_allow_html=True)
-
-# Navigation: 3 Columns
 nav_1, nav_2, nav_3 = st.columns(3)
 
 def nav_button(label, col):
@@ -211,13 +182,8 @@ def nav_button(label, col):
             st.session_state.current_page = label
             st.rerun()
 
-# Tab 1: Home
 nav_button("Home", nav_1)
-
-# Tab 2: Data Stories
 nav_button("Data Stories", nav_2)
-
-# Tab 3: Project Documentation (External Link)
 with nav_3:
     st.link_button("Project Documentation ↗", README_URL, use_container_width=True)
 
@@ -229,7 +195,6 @@ st.markdown("---")
 def render_footer():
     st.markdown("---")
     r1, r2, r3, r4 = st.columns(4)
-    
     r1.link_button("GitHub Repo", REPO_URL, icon="💻", use_container_width=True)
     r2.link_button("Commit History", f"{REPO_URL}/commits/master", icon="🕒", use_container_width=True)
     r3.link_button("Docker Hub", DOCKER_URL, icon="🐳", use_container_width=True)
@@ -244,15 +209,27 @@ if st.session_state.current_page == "Home":
         st.markdown("### System Status")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
+        # 1. Prepare Metric Data
         max_year = int(df['year'].max())
         total_countries = df['country'].nunique()
-        latest_global_co2 = df[(df['year'] == max_year) & (df['country'] == 'World')]['co2'].sum() / 1000
+        total_rows = len(df)
         
-        # FIX: Replaced static "Architecture" text with dynamic "Total Records" count
-        kpi1.metric("Data Year", f"{max_year}")
-        kpi2.metric("Entities Tracked", f"{total_countries}")
-        kpi3.metric(f"Global CO₂ ({max_year})", f"{latest_global_co2:.1f} Bt")
-        kpi4.metric("Dataset Volume", f"{len(df):,}", delta="Rows Processed")
+        # 2. Calculate CO2 Baseline (1950) vs Current (Max Year)
+        co2_now = df[(df['year'] == max_year) & (df['country'] == 'World')]['co2'].sum() / 1000
+        co2_1950 = df[(df['year'] == 1950) & (df['country'] == 'World')]['co2'].sum() / 1000
+        
+        # 3. Calculate Growth
+        if co2_1950 > 0:
+            growth_pct = ((co2_now - co2_1950) / co2_1950) * 100
+            delta_str = f"+{growth_pct:,.0f}% since 1950"
+        else:
+            delta_str = "N/A"
+
+        # 4. Render Metrics (New Order)
+        kpi1.metric("Entities Tracked", f"{total_countries}", delta="Global Coverage")
+        kpi2.metric("Dataset Volume", f"{total_rows:,}", delta="Rows Processed")
+        kpi3.metric("Global CO₂ (1950)", f"{co2_1950:.1f} Bt", help="Start of the Great Acceleration")
+        kpi4.metric(f"Global CO₂ ({max_year})", f"{co2_now:.1f} Bt", delta=delta_str)
     
     st.markdown("---")
     st.markdown("### Project Overview")
